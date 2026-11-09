@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">OSGlass</string>
+    <string name="override_service_label">OSGlass — substituir tela inicial</string>
+    <string name="override_service_desc">Abre o OSGlass quando a tela inicial do Google TV aparece (botão Home).</string>
+</resources>
