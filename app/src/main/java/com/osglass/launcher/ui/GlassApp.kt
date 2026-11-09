@@ -48,6 +48,8 @@ import kotlinx.coroutines.withContext
 
 enum class Screen { Onboarding, Home, Settings, StandBy }
 
+const val DOCK_SIZE = 6
+
 /** Estado compartilhado entre as telas: apps, conteúdo dos apps, entradas e ações. */
 class GlassState(val ctx: Context, val settings: GlassSettings) {
     var apps by mutableStateOf<List<AppEntry>?>(null)
@@ -62,13 +64,20 @@ class GlassState(val ctx: Context, val settings: GlassSettings) {
 
     val byPkg: Map<String, AppEntry> get() = apps.orEmpty().associateBy { it.pkg }
 
+    /** O dock tem no máximo [DOCK_SIZE] apps, como a fileira de cima do tvOS. */
     fun favorites(): List<AppEntry> {
         val map = byPkg
-        return settings.favorites.mapNotNull { map[it] }.filter { it.pkg !in settings.hidden }
+        return settings.favorites.mapNotNull { map[it] }.filter { it.pkg !in settings.hidden }.take(DOCK_SIZE)
     }
 
-    fun others(): List<AppEntry> =
-        apps.orEmpty().filter { it.pkg !in settings.favorites && it.pkg !in settings.hidden }
+    /** Tudo que não está no dock — inclusive favoritos além do 6º, que aparecem primeiro na grade. */
+    fun others(): List<AppEntry> {
+        val dock = favorites().map { it.pkg }.toSet()
+        val map = byPkg
+        val extraFavs = settings.favorites.filter { it !in dock && it !in settings.hidden }.mapNotNull { map[it] }
+        val rest = apps.orEmpty().filter { it.pkg !in dock && it.pkg !in settings.favorites && it.pkg !in settings.hidden }
+        return extraFavs + rest
+    }
 
     fun hiddenApps(): List<AppEntry> = apps.orEmpty().filter { it.pkg in settings.hidden }
 
@@ -82,7 +91,14 @@ class GlassState(val ctx: Context, val settings: GlassSettings) {
         else emptyList()
 
     fun toggleFavorite(pkg: String) {
-        settings.favorites = if (pkg in settings.favorites) settings.favorites - pkg else settings.favorites + pkg
+        val list = settings.favorites.filter { it !in settings.hidden }.toMutableList()
+        if (pkg in settings.favorites) {
+            settings.favorites = settings.favorites - pkg
+        } else {
+            // Dock cheio: o novo entra na última vaga e o 6º desce para a grade.
+            list.add(minOf(list.size, DOCK_SIZE - 1), pkg)
+            settings.favorites = list
+        }
     }
 
     fun hide(pkg: String) {
@@ -95,7 +111,7 @@ class GlassState(val ctx: Context, val settings: GlassSettings) {
     fun moveFavorite(pkg: String, delta: Int) {
         val list = settings.favorites.toMutableList()
         val i = list.indexOf(pkg)
-        val j = (i + delta).coerceIn(0, list.lastIndex)
+        val j = (i + delta).coerceIn(0, minOf(list.lastIndex, DOCK_SIZE - 1))
         if (i < 0 || i == j) return
         list.add(j, list.removeAt(i))
         settings.favorites = list
@@ -234,10 +250,9 @@ fun GlassApp(homeEvents: SharedFlow<Unit>, resumeEvents: SharedFlow<Unit>) {
         value = Wallpapers.load(ctx, settings.wallpaper, screenW, screenH)
     }
 
-    val boost = listOf(0.6f, 1f, 1.7f)[settings.glassLevel.coerceIn(0, 2)]
     Box(Modifier.fillMaxSize().background(Color.Black)) {
       androidx.compose.runtime.CompositionLocalProvider(
-          com.osglass.launcher.glass.LocalGlassBoost provides boost,
+          com.osglass.launcher.glass.LocalGlassStyle provides com.osglass.launcher.glass.GlassStyle.forLevel(settings.glassLevel),
           com.osglass.launcher.glass.LocalGlassTheme provides com.osglass.launcher.glass.GlassTheme(settings.themeDark),
       ) {
         AnimatedContent(

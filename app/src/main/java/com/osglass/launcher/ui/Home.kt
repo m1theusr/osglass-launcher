@@ -55,6 +55,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -76,8 +78,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 
-private val HeroHeight = 412.dp
-private val DockHeight = CardH + 28.dp
+private val HeroHeight = 406.dp
+private val DockHeight = CardH + 36.dp
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -147,6 +149,7 @@ fun HomeScreen(
     val blur by animateDpAsState(if (overlayOpen && !settings.liteMode) 14.dp else 0.dp, tween(250), label = "blur")
 
     val listState = rememberLazyListState()
+    var area by remember { mutableStateOf(Area.Dock) }
     val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 60 } }
     val dim by animateFloatAsState(if (scrolled) 0.5f else 0f, tween(400), label = "dim")
 
@@ -186,20 +189,44 @@ fun HomeScreen(
         }
     }
 
-    val edgeTop = with(LocalDensity.current) { 34.dp.toPx() }
-    val edgeBottom = with(LocalDensity.current) { 78.dp.toPx() }
+    val density = LocalDensity.current
+    val edgeTop = with(density) { 34.dp.toPx() }
+    val edgeBottom = with(density) { 78.dp.toPx() }
+    // tvOS 27: ao descer para os apps a página sobe, o dock vai para o alto e o fundo vira o destaque desfocado.
+    val gridOffset = with(density) { (HeroHeight - 92.dp).toPx() }.toInt()
+    LaunchedEffect(area) {
+        when (area) {
+            Area.Grid -> if (listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < gridOffset - 4) {
+                listState.animateScrollToItem(0, gridOffset)
+            }
+            Area.Dock, Area.Hero -> if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
+                listState.animateScrollToItem(0)
+            }
+        }
+    }
+    val inGrid = area == Area.Grid
+    val frostAlpha by animateFloatAsState(if (inGrid) 1f else 0f, tween(500), label = "frost")
+    val baseGlass = com.osglass.launcher.glass.LocalGlassStyle.current
+    val contentGlass = if (inGrid) baseGlass.copy(clarity = 0f) else baseGlass
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().blur(blur)) {
             Crossfade(backdrop, animationSpec = tween(700), label = "backdrop") { b ->
-                if (b != null) Image(b.sharp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                if (b != null) Box(Modifier.fillMaxSize()) {
+                    Image(b.sharp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    if (frostAlpha > 0.01f) Image(b.frosted, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds, alpha = frostAlpha)
+                }
             }
             if (heroItem != null) {
-                Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(0f to Color.Black.copy(alpha = 0.72f), 0.45f to Color.Black.copy(alpha = 0.3f), 0.75f to Color.Transparent)))
+                Box(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - frostAlpha }.background(Brush.horizontalGradient(0f to Color.Black.copy(alpha = 0.72f), 0.45f to Color.Black.copy(alpha = 0.3f), 0.75f to Color.Transparent)))
             }
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.5f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.55f))))
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = (dim + settings.wallDim * 0.15f).coerceAtMost(0.8f))))
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.5f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.55f * (1f - frostAlpha)))))
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = (frostAlpha * 0.22f + settings.wallDim * 0.15f).coerceAtMost(0.8f))))
 
-            CompositionLocalProvider(LocalBackdrop provides backdrop, LocalBringIntoViewSpec provides EdgeSpec(edgeTop, edgeBottom)) {
+            CompositionLocalProvider(
+                LocalBackdrop provides backdrop,
+                LocalBringIntoViewSpec provides EdgeSpec(edgeTop, edgeBottom),
+                com.osglass.launcher.glass.LocalGlassStyle provides contentGlass,
+            ) {
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 110.dp)) {
                     item(key = "hero") {
                         HeroArea(
@@ -209,16 +236,16 @@ fun HomeScreen(
                             count = shelfItems.size,
                             index = heroIndex,
                             needsPermission = !state.hasContentPermission,
-                            clockFocus = clockFocus,
-                            onClock = { ccOpen = true },
-                            onAvatar = onOpenSettings,
                             onOpenApp = { shelfApp?.let { state.launchApp(it.pkg) } },
                             onPlay = { heroItem?.let { TvContent.open(ctx, it) } },
                             onRequestPermission = { permissionLauncher.launch(TvContent.PERMISSION) },
+                            modifier = Modifier
+                                .graphicsLayer { alpha = 1f - frostAlpha }
+                                .onFocusChanged { if (it.hasFocus) area = Area.Hero },
                         )
                     }
                     item(key = "dock") {
-                        Dock {
+                        Dock(showChevron = area == Area.Dock) {
                             if (favs.isEmpty() && state.apps != null) {
                                 item {
                                     BasicText(
@@ -237,7 +264,7 @@ fun HomeScreen(
                                     onMenu = { menuFor = app },
                                     onMove = { d -> state.moveFavorite(app.pkg, d) },
                                     onMoveDone = { moving = null },
-                                    onFocus = { if (it) focusedPkg = app.pkg },
+                                    onFocus = { if (it) { focusedPkg = app.pkg; area = Area.Dock } },
                                     glassIcons = glassIcons,
                                     showLabel = false,
                                     effects = !settings.liteMode,
@@ -246,23 +273,14 @@ fun HomeScreen(
                             }
                         }
                     }
-                    val cw = state.continueWatching()
-                    if (cw.isNotEmpty()) {
-                        item(key = "cw-title") { SectionTitle("Continuar assistindo") }
-                        item(key = "cw") {
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = SafeX, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(Gap),
-                            ) {
-                                items(cw, key = { it.key }) { c -> ContentCard(c, 96.dp, { TvContent.open(ctx, c) }) }
-                            }
-                        }
-                    }
+                    // Grade logo abaixo do dock, sem título e sem nomes (como no tvOS).
                     if (gridItems.isNotEmpty()) {
-                        item(key = "apps-title") { SectionTitle("Apps") }
+                        item(key = "grid-gap") { Spacer(Modifier.height(22.dp)) }
                         items(gridItems.chunked(COLUMNS), key = { row -> "row-" + gridKey(row.first()) }) { row ->
                             Row(
-                                Modifier.padding(start = SafeX, end = SafeX, bottom = 6.dp),
+                                Modifier
+                                    .padding(start = SafeX, end = SafeX, bottom = 22.dp)
+                                    .onFocusChanged { if (it.hasFocus) area = Area.Grid },
                                 horizontalArrangement = Arrangement.spacedBy(Gap),
                             ) {
                                 row.forEach { item ->
@@ -276,8 +294,8 @@ fun HomeScreen(
                                             onMenu = { menuFor = item },
                                             onMove = {},
                                             onMoveDone = {},
-                                            onFocus = { if (it) focusedPkg = item.pkg },
                                             glassIcons = glassIcons,
+                                            showLabel = false,
                                             effects = !settings.liteMode,
                                         )
                                     }
@@ -285,11 +303,53 @@ fun HomeScreen(
                             }
                         }
                     }
+                    val cw = state.continueWatching()
+                    if (cw.isNotEmpty()) {
+                        item(key = "cw-title") { SectionTitle("Continuar assistindo") }
+                        item(key = "cw") {
+                            LazyRow(
+                                Modifier.onFocusChanged { if (it.hasFocus) area = Area.Grid },
+                                contentPadding = PaddingValues(horizontal = SafeX, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(Gap),
+                            ) {
+                                items(cw, key = { it.key }) { c -> ContentCard(c, 96.dp, { TvContent.open(ctx, c) }) }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Topo fixo (fora da rolagem): clima/saudação à esquerda; ilha e relógio com o perfil à direita.
+            Row(
+                Modifier.fillMaxWidth().padding(start = SafeX, end = SafeX, top = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(Modifier.graphicsLayer { alpha = 1f - frostAlpha }, verticalAlignment = Alignment.CenterVertically) {
+                    if (settings.weatherOn) state.weather?.let { WeatherChip(it); Spacer(Modifier.width(12.dp)) }
+                    if (settings.greeting) {
+                        BasicText(greetingFor(settings.profileName), style = LabelStyle.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold))
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                CompositionLocalProvider(LocalBackdrop provides backdrop, com.osglass.launcher.glass.LocalGlassStyle provides contentGlass) {
+                    if (settings.islandOn) state.nowPlaying?.let { np ->
+                        Island(np, { com.osglass.launcher.data.Media.togglePlay(np); state.nowPlaying = np.copy(playing = !np.playing) })
+                        Spacer(Modifier.width(14.dp))
+                    }
+                    ClockPill(
+                        { ccOpen = true },
+                        Modifier.focusRequester(clockFocus).onFocusChanged { if (it.isFocused) area = Area.Hero },
+                        h24 = settings.clock24h,
+                        avatarLetter = settings.profileName.take(1).uppercase().ifEmpty { "•" },
+                        avatarColor = settings.profileColor,
+                    )
                 }
             }
         }
 
-        CompositionLocalProvider(LocalBackdrop provides backdrop) {
+        // Painéis por cima da tela desfocada: o vidro mostra o fundo desfocado (senão aparece nítido demais).
+        val overlayGlass = com.osglass.launcher.glass.LocalGlassStyle.current.copy(clarity = 0f)
+        CompositionLocalProvider(LocalBackdrop provides backdrop, com.osglass.launcher.glass.LocalGlassStyle provides overlayGlass) {
             ControlCenter(
                 visible = ccOpen,
                 state = state,
@@ -365,32 +425,13 @@ private fun HeroArea(
     count: Int,
     index: Int,
     needsPermission: Boolean,
-    clockFocus: FocusRequester,
-    onClock: () -> Unit,
-    onAvatar: () -> Unit,
     onOpenApp: () -> Unit,
     onPlay: () -> Unit,
     onRequestPermission: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val settings = state.settings
-    Box(Modifier.fillMaxWidth().height(HeroHeight)) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = SafeX, end = SafeX, top = 24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (settings.weatherOn) state.weather?.let { WeatherChip(it); Spacer(Modifier.width(12.dp)) }
-            if (settings.greeting) {
-                BasicText(greetingFor(settings.profileName), style = LabelStyle.copy(fontSize = 15.sp, fontWeight = FontWeight.SemiBold))
-            }
-            Spacer(Modifier.weight(1f))
-            if (settings.islandOn) state.nowPlaying?.let { np ->
-                Island(np, { com.osglass.launcher.data.Media.togglePlay(np); state.nowPlaying = np.copy(playing = !np.playing) })
-                Spacer(Modifier.width(14.dp))
-            }
-            ClockPill(onClock, Modifier.focusRequester(clockFocus), h24 = settings.clock24h)
-            Spacer(Modifier.width(10.dp))
-            AvatarButton(settings.profileName.take(1).uppercase().ifEmpty { "•" }, settings.profileColor, onAvatar)
-        }
+    Box(modifier.fillMaxWidth().height(HeroHeight)) {
         Column(
             Modifier.align(Alignment.BottomStart).padding(start = SafeX, bottom = 26.dp).width(480.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -455,10 +496,23 @@ private fun SectionTitle(text: String) {
 /** Faixa de vidro com os favoritos — o "dock" da tela inicial. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Dock(content: LazyListScope.() -> Unit) {
-    val pad = 14.dp
-    val shape = RoundedCornerShape(32.dp)
+private fun Dock(showChevron: Boolean, content: LazyListScope.() -> Unit) {
+    // Margem lateral = espaço entre apps: 6 cabem exatos e o 7º não aparece pela borda.
+    val pad = Gap
+    val padV = 18.dp
+    // Raio ~¼ da altura, como o dock do tvOS/macOS (não pílula).
+    val shape = RoundedCornerShape(24.dp)
     Box(Modifier.fillMaxWidth().padding(horizontal = SafeX - pad)) {
+        // Setinha "︿" acima do dock: dá para subir até o destaque (tvOS).
+        val chevronAlpha by animateFloatAsState(if (showChevron) 0.85f else 0f, tween(300), label = "chevron")
+        androidx.compose.foundation.Canvas(
+            Modifier.align(Alignment.TopCenter).size(30.dp, 10.dp).graphicsLayer { translationY = -16.dp.toPx(); alpha = chevronAlpha },
+        ) {
+            val path = androidx.compose.ui.graphics.Path().apply {
+                moveTo(2f, size.height - 2f); lineTo(size.width / 2, 2f); lineTo(size.width - 2f, size.height - 2f)
+            }
+            drawPath(path, Color.White, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
+        }
         Box(
             Modifier
                 .fillMaxWidth()
@@ -470,7 +524,7 @@ private fun Dock(content: LazyListScope.() -> Unit) {
             CompositionLocalProvider(LocalBringIntoViewSpec provides EdgeSpec(padPx, padPx, adaptiveEnd = false)) {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(Gap),
-                    contentPadding = PaddingValues(start = pad, end = pad, top = pad, bottom = pad),
+                    contentPadding = PaddingValues(start = pad, end = pad, top = padV, bottom = padV),
                     modifier = Modifier.height(DockHeight),
                     content = content,
                 )
@@ -511,3 +565,5 @@ private fun gridKey(item: Any): String = when (item) {
     is AppEntry -> item.pkg
     else -> item.toString()
 }
+
+private enum class Area { Hero, Dock, Grid }

@@ -135,7 +135,7 @@ val ProfileColors = listOf(
 )
 
 @Composable
-fun ClockPill(onClick: () -> Unit, modifier: Modifier = Modifier, h24: Boolean = true) {
+fun ClockPill(onClick: () -> Unit, modifier: Modifier = Modifier, h24: Boolean = true, avatarLetter: String? = null, avatarColor: Int = 0) {
     var focused by remember { mutableStateOf(false) }
     val theme = LocalGlassTheme.current
     val scale by animateFloatAsState(if (focused) 1.08f else 1f, spring(0.6f, 450f), label = "clockPill")
@@ -157,10 +157,17 @@ fun ClockPill(onClick: () -> Unit, modifier: Modifier = Modifier, h24: Boolean =
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         BasicText(time, style = LabelStyle.copy(color = fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, shadow = null))
-        Box(
-            Modifier.size(34.dp, 24.dp).clip(shape).background(fg.copy(alpha = 0.18f)),
-            contentAlignment = Alignment.Center,
-        ) { ToggleGlyph(fg) }
+        if (avatarLetter != null) {
+            Box(
+                Modifier.size(28.dp).background(Brush.linearGradient(ProfileColors[avatarColor.coerceIn(0, ProfileColors.lastIndex)]), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { BasicText(avatarLetter, style = LabelStyle.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold, shadow = null)) }
+        } else {
+            Box(
+                Modifier.size(34.dp, 24.dp).clip(shape).background(fg.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center,
+            ) { ToggleGlyph(fg) }
+        }
     }
 }
 

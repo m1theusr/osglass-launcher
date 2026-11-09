@@ -123,7 +123,7 @@ fun OnboardingScreen(state: GlassState, wallpaper: Backdrop?, onDone: () -> Unit
     }
 
     fun finish() {
-        settings.profileName = name.trim().ifEmpty { "Você" }
+        settings.profileName = name.trim()
         settings.favorites = favs.value
         settings.hidden = hidden.value
         settings.favoritesInitialized = true
@@ -178,12 +178,16 @@ fun OnboardingScreen(state: GlassState, wallpaper: Backdrop?, onDone: () -> Unit
                         3 -> StepFrame(
                             icon = { IconBadge(STAR_ICON, listOf(Color(0xFFFFD60A), Color(0xFFFF9F0A)), filled = true) },
                             title = "Escolha seus favoritos",
-                            desc = "Eles ficam no dock de vidro, na ordem em que você marcar.",
+                            desc = "Até 6 apps ficam no dock de vidro, na ordem em que você marcar.",
                         ) {
                             AppPicker(state.apps.orEmpty().filter { it.pkg !in hidden.value }, Modifier.focusRequester(content), badge = { app ->
                                 favs.value.indexOf(app.pkg).takeIf { it >= 0 }?.let { (it + 1).toString() }
                             }, dimmed = { false }) { app ->
-                                favs.value = if (app.pkg in favs.value) favs.value - app.pkg else favs.value + app.pkg
+                                favs.value = when {
+                                    app.pkg in favs.value -> favs.value - app.pkg
+                                    favs.value.size >= DOCK_SIZE -> favs.value
+                                    else -> favs.value + app.pkg
+                                }
                             }
                         }
                         4 -> StepFrame(

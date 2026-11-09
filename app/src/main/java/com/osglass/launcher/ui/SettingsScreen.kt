@@ -290,9 +290,12 @@ fun SettingsScreen(state: GlassState, wallpaper: Backdrop?, onExit: () -> Unit, 
                 settings.wallDim = (settings.wallDim + 1) % 4
             },
             SHeader("Vidro"),
-            SChoice("Intensidade do vidro", listOf("Leve", "Médio", "Forte")[settings.glassLevel.coerceIn(0, 2)], icon = SIcons.LOOK, color = Color(0xFFFF9F0A)) {
-                settings.glassLevel = (settings.glassLevel + 1) % 3
-            },
+            SChoice(
+                "Estilo do vidro",
+                com.osglass.launcher.glass.GlassStyle.LevelNames[settings.glassLevel.coerceIn(0, 2)],
+                "Transparente é o Liquid Glass do tvOS; Fosco desfoca mais o fundo. Vale para todos os painéis.",
+                SIcons.LOOK, Color(0xFFFF9F0A),
+            ) { settings.glassLevel = (settings.glassLevel + 1) % 3 },
             SCaption("Suas próprias imagens: coloque em Android/data/com.osglass.launcher/files/wallpapers."),
         )
         "Relógio e clima" -> buildList {
@@ -337,7 +340,7 @@ fun SettingsScreen(state: GlassState, wallpaper: Backdrop?, onExit: () -> Unit, 
         }
         "Apps" -> buildList {
             val favs = state.favorites()
-            add(SHeader("Favoritos (${favs.size})"))
+            add(SHeader("No dock (${favs.size} de $DOCK_SIZE)"))
             favs.forEach { app -> add(SLink(app.label, "Remover") { state.toggleFavorite(app.pkg) }) }
             val others = state.others()
             if (others.isNotEmpty()) {

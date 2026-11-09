@@ -23,8 +23,8 @@ class GlassSettings(ctx: Context) {
     var hidden by stringSet("hidden", DEFAULT_HIDDEN)
     var wallpaper by string("wallpaper", Wallpapers.DEFAULT)
 
-    /** 0 = leve, 1 = médio, 2 = forte. */
-    var glassLevel by int("glass_level", 1)
+    /** 0 = transparente (padrão, como o tvOS), 1 = equilibrado, 2 = fosco. */
+    var glassLevel by int("glass_level", 0)
     /** Cards por linha: 5 (grande), 6 (médio), 7 (pequeno). */
     var columns by int("columns", 6)
     var alwaysShowLabels by bool("always_labels", false)
