@@ -285,6 +285,8 @@ fun HomeScreen(
                             Row(
                                 Modifier
                                     .padding(start = SafeX, end = SafeX, bottom = 22.dp)
+                                    // No topo só o dock aparece; a grade surge ao descer (sem cantinhos na borda).
+                                    .graphicsLayer { alpha = frostAlpha }
                                     .onFocusChanged { if (it.hasFocus) area = Area.Grid },
                                 horizontalArrangement = Arrangement.spacedBy(Gap),
                             ) {
@@ -310,10 +312,10 @@ fun HomeScreen(
                     }
                     val cw = state.continueWatching()
                     if (cw.isNotEmpty()) {
-                        item(key = "cw-title") { SectionTitle("Continuar assistindo") }
+                        item(key = "cw-title") { Box(Modifier.graphicsLayer { alpha = frostAlpha }) { SectionTitle("Continuar assistindo") } }
                         item(key = "cw") {
                             LazyRow(
-                                Modifier.onFocusChanged { if (it.hasFocus) area = Area.Grid },
+                                Modifier.graphicsLayer { alpha = frostAlpha }.onFocusChanged { if (it.hasFocus) area = Area.Grid },
                                 contentPadding = PaddingValues(horizontal = SafeX, vertical = 6.dp),
                                 horizontalArrangement = Arrangement.spacedBy(Gap),
                             ) {
