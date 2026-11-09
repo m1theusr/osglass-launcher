@@ -55,6 +55,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -115,6 +118,7 @@ fun HomeScreen(
     fun tryFocus(pkg: String?): Boolean =
         pkg != null && requesters[pkg] != null && runCatching { requesters[pkg]!!.requestFocus() }.isSuccess
     val clockFocus = remember { FocusRequester() }
+    val heroFocus = remember { FocusRequester() }
 
     // ---- Top Shelf: conteúdo do app em foco
     var focusedPkg by remember { mutableStateOf<String?>(null) }
@@ -239,6 +243,7 @@ fun HomeScreen(
                             onOpenApp = { shelfApp?.let { state.launchApp(it.pkg) } },
                             onPlay = { heroItem?.let { TvContent.open(ctx, it) } },
                             onRequestPermission = { permissionLauncher.launch(TvContent.PERMISSION) },
+                            primaryFocus = heroFocus,
                             modifier = Modifier
                                 .graphicsLayer { alpha = 1f - frostAlpha }
                                 .onFocusChanged { if (it.hasFocus) area = Area.Hero },
@@ -338,7 +343,18 @@ fun HomeScreen(
                     }
                     ClockPill(
                         { ccOpen = true },
-                        Modifier.focusRequester(clockFocus).onFocusChanged { if (it.isFocused) area = Area.Hero },
+                        Modifier
+                            .focusRequester(clockFocus)
+                            .onFocusChanged { if (it.isFocused) area = Area.Hero }
+                            // ▼ na pílula: a busca automática não acha os botões do destaque (ficam bem à esquerda).
+                            .onPreviewKeyEvent { e ->
+                                if (e.nativeKeyEvent.keyCode != android.view.KeyEvent.KEYCODE_DPAD_DOWN) return@onPreviewKeyEvent false
+                                if (e.type == KeyEventType.KeyDown) {
+                                    val r: Any? = runCatching { heroFocus.requestFocus() }.getOrNull()
+                                    if (r == null || r == false) focusFirst()
+                                }
+                                true
+                            },
                         h24 = settings.clock24h,
                         avatarLetter = settings.profileName.take(1).uppercase().ifEmpty { "•" },
                         avatarColor = settings.profileColor,
@@ -428,6 +444,7 @@ private fun HeroArea(
     onOpenApp: () -> Unit,
     onPlay: () -> Unit,
     onRequestPermission: () -> Unit,
+    primaryFocus: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
     val settings = state.settings
@@ -457,7 +474,7 @@ private fun HeroArea(
                         BasicText(it, style = LabelStyle.copy(fontSize = 13.sp, fontWeight = FontWeight.Normal, color = Color.White.copy(alpha = 0.78f)), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        GlassPill(if (item.progress != null) "▶  Retomar" else "▶  Assistir", onPlay, primary = true)
+                        GlassPill(if (item.progress != null) "▶  Retomar" else "▶  Assistir", onPlay, Modifier.focusRequester(primaryFocus), primary = true)
                         if (app != null) GlassPill("Abrir ${app.label}", onOpenApp)
                     }
                     if (count > 1) {
@@ -479,7 +496,7 @@ private fun HeroArea(
                         style = LabelStyle.copy(fontSize = 14.sp, fontWeight = FontWeight.Normal, color = Color.White.copy(alpha = 0.75f)),
                     )
                     Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        GlassPill("Abrir", onOpenApp, primary = true)
+                        GlassPill("Abrir", onOpenApp, Modifier.focusRequester(primaryFocus), primary = true)
                         if (needsPermission) GlassPill("Ativar destaques", onRequestPermission)
                     }
                 }
