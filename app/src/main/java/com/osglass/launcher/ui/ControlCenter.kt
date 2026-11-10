@@ -78,6 +78,7 @@ fun ControlCenter(
     onStandBy: () -> Unit,
     onSettings: () -> Unit,
     onRecents: () -> Unit,
+    onNewProfile: () -> Unit,
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -122,7 +123,7 @@ fun ControlCenter(
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                ProfilesRow(state)
+                ProfilesRow(state) { onClose(); onNewProfile() }
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     CcTile(Icons.STANDBY, "StandBy", null, Modifier.width(126.dp).height(150.dp).focusRequester(first), big = true) {
@@ -265,7 +266,7 @@ private const val RECENTS_ICON = "M4 8h11v11H4zM8 4h12v11"
 
 /** Perfis no topo da Central de controle (como no tvOS): troca com um OK. */
 @Composable
-private fun ProfilesRow(state: GlassState) {
+private fun ProfilesRow(state: GlassState, onAdd: () -> Unit) {
     val settings = state.settings
     val theme = LocalGlassTheme.current
     val profiles = settings.profiles()
@@ -276,8 +277,7 @@ private fun ProfilesRow(state: GlassState) {
             }
         }
         ProfileDot("+", androidx.compose.ui.graphics.SolidColor(Color.White.copy(alpha = 0.18f)), "Adicionar", false, theme.content) {
-            val installed = state.byPkg.keys
-            settings.addProfile(GlassSettings.DEFAULT_FAVORITES.filter { it in installed })
+            onAdd()
         }
     }
 }

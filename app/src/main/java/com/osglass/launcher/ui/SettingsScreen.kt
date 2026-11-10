@@ -161,7 +161,15 @@ private val ColorNames = listOf("Laranja", "Azul", "Verde", "Roxo", "Grafite")
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun SettingsScreen(state: GlassState, wallpaper: Backdrop?, onExit: () -> Unit, onStandBy: () -> Unit, onRedoOnboarding: () -> Unit) {
+fun SettingsScreen(
+    state: GlassState,
+    wallpaper: Backdrop?,
+    onExit: () -> Unit,
+    onStandBy: () -> Unit,
+    onRedoOnboarding: () -> Unit,
+    onNewProfile: () -> Unit,
+    onPickProfile: () -> Unit,
+) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -209,10 +217,9 @@ fun SettingsScreen(state: GlassState, wallpaper: Backdrop?, onExit: () -> Unit, 
                     settings.switchProfile(pr.id); tick++
                 })
             }
-            add(SLink("Adicionar perfil") {
-                val installed = state.byPkg.keys
-                settings.addProfile(GlassSettings.DEFAULT_FAVORITES.filter { it in installed }); notice = "Perfil criado"; tick++
-            })
+            add(SLink("Adicionar perfil") { onNewProfile() })
+            add(SToggle("Perguntar quem está usando ao ligar a TV", settings.askProfileOnBoot, "tela “Quem está usando?” depois que a TV reinicia") { settings.askProfileOnBoot = it })
+            add(SLink("Mostrar “Quem está usando?” agora") { onPickProfile() })
             add(SCaption("Cada perfil tem seus favoritos, apps ocultos e papel de parede. Troque também pela Central de controle."))
             add(SHeader("Este perfil"))
             add(SEdit("Nome", settings.profileName, "Seu nome") { settings.profileName = it.trim().ifEmpty { settings.profileName } })

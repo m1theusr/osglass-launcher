@@ -97,6 +97,9 @@ class GlassSettings(ctx: Context) {
     // ---- Perfis: o perfil atual vive nas chaves normais; os outros ficam guardados em JSON.
     private var profilesJson by string("profiles", "")
     var currentProfile by string("current_profile", "p1")
+    /** Mostrar "Quem está usando?" depois que a TV reinicia (com mais de um perfil). */
+    var askProfileOnBoot by bool("ask_profile_on_boot", true)
+    var lastBootCount by int("last_boot_count", -1)
 
     private fun snapshot() = Profile(currentProfile, profileName, profileColor, favorites, hidden, wallpaper)
 

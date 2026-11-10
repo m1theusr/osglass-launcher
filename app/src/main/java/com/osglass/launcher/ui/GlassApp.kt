@@ -46,7 +46,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.withContext
 
-enum class Screen { Onboarding, Home, Settings, StandBy }
+enum class Screen { Onboarding, Home, Settings, StandBy, Profiles, NewProfile }
 
 const val DOCK_SIZE = 6
 
@@ -181,7 +181,19 @@ fun GlassApp(homeEvents: SharedFlow<Unit>, resumeEvents: SharedFlow<Unit>) {
         val dm = ctx.resources.displayMetrics
         maxOf(dm.widthPixels, dm.heightPixels) to minOf(dm.widthPixels, dm.heightPixels)
     }
-    var screen by remember { mutableStateOf(if (settings.onboardingDone) Screen.Home else Screen.Onboarding) }
+    // Depois que a TV reinicia (contador de boot mudou), pergunta quem está usando — se houver mais de um perfil.
+    val boot = remember { bootCount(ctx) }
+    var screen by remember {
+        mutableStateOf(
+            when {
+                !settings.onboardingDone -> Screen.Onboarding
+                settings.askProfileOnBoot && boot != settings.lastBootCount && settings.profiles().size > 1 -> Screen.Profiles
+                else -> Screen.Home
+            },
+        )
+    }
+    var newProfileReturn by remember { mutableStateOf(Screen.Home) }
+    LaunchedEffect(Unit) { settings.lastBootCount = boot }
 
     DisposableEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
@@ -222,7 +234,7 @@ fun GlassApp(homeEvents: SharedFlow<Unit>, resumeEvents: SharedFlow<Unit>) {
             state.contentKey++
         }
     }
-    LaunchedEffect(Unit) { homeEvents.collect { if (screen != Screen.Onboarding) screen = Screen.Home } }
+    LaunchedEffect(Unit) { homeEvents.collect { if (screen != Screen.Onboarding && screen != Screen.Profiles) screen = Screen.Home } }
     LaunchedEffect(settings.weatherOn, settings.weatherCity, settings.weatherUnit, settings.appsOnly) {
         if (!settings.weatherOn || settings.appsOnly) { state.weather = null; return@LaunchedEffect }
         while (true) {
@@ -269,13 +281,26 @@ fun GlassApp(homeEvents: SharedFlow<Unit>, resumeEvents: SharedFlow<Unit>) {
                     state, wallpaper, screenW, screenH, homeEvents,
                     onStandBy = { screen = Screen.StandBy },
                     onOpenSettings = { screen = Screen.Settings },
+                    onNewProfile = { newProfileReturn = Screen.Home; screen = Screen.NewProfile },
                 )
                 Screen.Onboarding -> OnboardingScreen(state, wallpaper) { screen = Screen.Home }
+                Screen.Profiles -> ProfilePickerScreen(
+                    state, wallpaper,
+                    onPicked = { screen = Screen.Home },
+                    onAdd = { newProfileReturn = Screen.Home; screen = Screen.NewProfile },
+                )
+                Screen.NewProfile -> NewProfileScreen(
+                    state, wallpaper,
+                    onDone = { screen = Screen.Home },
+                    onCancel = { screen = newProfileReturn },
+                )
                 Screen.Settings -> SettingsScreen(
                     state, wallpaper,
                     onExit = { screen = Screen.Home },
                     onStandBy = { screen = Screen.StandBy },
                     onRedoOnboarding = { settings.onboardingDone = false; screen = Screen.Onboarding },
+                    onNewProfile = { newProfileReturn = Screen.Settings; screen = Screen.NewProfile },
+                    onPickProfile = { screen = Screen.Profiles },
                 )
                 Screen.StandBy -> StandByScreen(state, wallpaper) { screen = Screen.Home }
             }

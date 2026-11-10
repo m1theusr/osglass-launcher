@@ -338,7 +338,7 @@ private fun AvatarPreview(name: String, colorIndex: Int) {
 }
 
 @Composable
-private fun NameField(value: String, onChange: (String) -> Unit, modifier: Modifier) {
+internal fun NameField(value: String, onChange: (String) -> Unit, modifier: Modifier) {
     // Linha comum até apertar OK: só então o teclado da TV abre (senão ele cobre a tela ao receber foco).
     var editing by remember { mutableStateOf(false) }
     var wasEditing by remember { mutableStateOf(false) }
@@ -386,7 +386,7 @@ private fun NameField(value: String, onChange: (String) -> Unit, modifier: Modif
 }
 
 @Composable
-private fun ColorDot(index: Int, selected: Boolean, name: String, onClick: () -> Unit) {
+internal fun ColorDot(index: Int, selected: Boolean, name: String, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.15f else 1f, spring(0.6f, 450f), label = "dot")
     Box(
@@ -532,7 +532,7 @@ private fun StatusList(on: Boolean, projectivy: Boolean) {
 /* ------------------------------------------------------------------ Botões */
 
 @Composable
-private fun PrimaryButton(label: String, onClick: () -> Unit, modifier: Modifier, width: Dp = 320.dp) {
+internal fun PrimaryButton(label: String, onClick: () -> Unit, modifier: Modifier, width: Dp = 320.dp) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.05f else 1f, spring(0.6f, 450f), label = "primary")
     val bg by animateColorAsState(if (focused) Color.White else Color.White.copy(alpha = 0.85f), label = "primaryBg")
@@ -551,7 +551,7 @@ private fun PrimaryButton(label: String, onClick: () -> Unit, modifier: Modifier
 }
 
 @Composable
-private fun TextLink(label: String, onClick: () -> Unit) {
+internal fun TextLink(label: String, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     BasicText(
         label,

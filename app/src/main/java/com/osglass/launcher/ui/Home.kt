@@ -96,6 +96,7 @@ fun HomeScreen(
     homeEvents: SharedFlow<Unit>,
     onStandBy: () -> Unit,
     onOpenSettings: () -> Unit,
+    onNewProfile: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val view = LocalView.current
@@ -399,6 +400,7 @@ fun HomeScreen(
                 onStandBy = onStandBy,
                 onSettings = onOpenSettings,
                 onRecents = { recentsOpen = true },
+                onNewProfile = onNewProfile,
             )
 
             // ---- Menu do app (segurar OK / botão Menu)
