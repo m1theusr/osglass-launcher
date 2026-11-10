@@ -1,8 +1,10 @@
 package com.osglass.launcher.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,7 +25,6 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,9 +35,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -43,9 +43,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.osglass.launcher.data.GlassSettings
 import com.osglass.launcher.data.Profile
-import com.osglass.launcher.data.ProfileColorCount
 import com.osglass.launcher.glass.Backdrop
 
 /** Fundo das telas de perfil: papel de parede pré-desfocado e escurecido (leve e com cara de vidro). */
@@ -56,129 +54,134 @@ private fun ProfileBackdrop(wallpaper: Backdrop?) {
 }
 
 /**
- * "Quem está usando?" — aparece depois que a TV reinicia (com mais de um perfil), no estilo Netflix/Apple TV.
+ * "Quem está usando?" — no estilo Netflix/Apple TV. Aparece depois que a TV reinicia (com mais de um
+ * perfil) e pelos Ajustes. "Gerenciar perfis" põe um lápis em cada avatar para editar.
  */
 @Composable
-fun ProfilePickerScreen(state: GlassState, wallpaper: Backdrop?, onPicked: () -> Unit, onAdd: () -> Unit) {
+fun ProfilePickerScreen(
+    state: GlassState,
+    wallpaper: Backdrop?,
+    onPicked: () -> Unit,
+    onAdd: () -> Unit,
+    onEdit: (String) -> Unit,
+) {
     val settings = state.settings
+    val pinGate = LocalPinGate.current
     val profiles = remember { settings.profiles() }
     val requesters = remember { profiles.associate { it.id to FocusRequester() } }
+    var manage by remember { mutableStateOf(false) }
+    var entering by remember { mutableStateOf<String?>(null) }
+    val exit = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         withFrameNanos { }
         runCatching { requesters[settings.currentProfile]?.requestFocus() ?: requesters.values.firstOrNull()?.requestFocus() }
     }
-    BackHandler { onPicked() }
+    // Entrar no perfil: a tela cresce e some, e a tela inicial aparece por trás.
+    LaunchedEffect(entering) {
+        val id = entering ?: return@LaunchedEffect
+        exit.animateTo(1f, tween(380))
+        settings.switchProfile(id)
+        onPicked()
+    }
+    BackHandler { if (manage) manage = false else onPicked() }
 
-    Box(Modifier.fillMaxSize()) {
+    fun pick(p: Profile) {
+        when {
+            manage -> if (p.pin.isNotEmpty()) pinGate(PinRequest("PIN de ${p.name}", "Para editar este perfil", verifyHash = p.pin) { onEdit(p.id) }) else onEdit(p.id)
+            p.pin.isNotEmpty() && p.id != settings.currentProfile ->
+                pinGate(PinRequest("PIN de ${p.name}", null, verifyHash = p.pin) { entering = p.id })
+            else -> entering = p.id
+        }
+    }
+
+    Box(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - exit.value; scaleX = 1f + exit.value * 0.12f; scaleY = 1f + exit.value * 0.12f }) {
         ProfileBackdrop(wallpaper)
         Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-            BasicText("Quem está usando?", style = TitleStyle.copy(fontSize = 34.sp, fontWeight = FontWeight.Bold))
-            Spacer(Modifier.height(40.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(34.dp), verticalAlignment = Alignment.Top) {
+            BasicText(
+                if (manage) "Gerenciar perfis" else "Quem está usando?",
+                style = TitleStyle.copy(fontSize = 34.sp, fontWeight = FontWeight.Bold),
+            )
+            Spacer(Modifier.height(38.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(30.dp), verticalAlignment = Alignment.Top) {
                 profiles.forEach { p ->
-                    ProfileTile(
-                        letter = p.name.take(1).uppercase().ifEmpty { "•" },
-                        brush = Brush.linearGradient(ProfileColors[p.color.coerceIn(0, ProfileColors.lastIndex)]),
-                        name = p.name.ifEmpty { "Sem nome" },
-                        requester = requesters.getValue(p.id),
-                    ) {
-                        settings.switchProfile(p.id)
-                        onPicked()
-                    }
+                    ProfileTile(p, requesters.getValue(p.id), manage) { pick(p) }
                 }
-                ProfileTile("+", SolidColor(Color.White.copy(alpha = 0.16f)), "Adicionar perfil", remember { FocusRequester() }, plus = true, onClick = onAdd)
+                if (!manage) AddTile(onAdd)
             }
+            Spacer(Modifier.height(30.dp))
+            GlassPill(if (manage) "Concluído" else "Gerenciar perfis", { manage = !manage })
         }
         BasicText(
-            "Dá para trocar de perfil depois na Central de controle (relógio no canto da tela).",
-            Modifier.align(Alignment.BottomCenter).padding(bottom = 34.dp),
+            if (manage) "Escolha um perfil para editar nome, avatar, favoritos, visual e proteção."
+            else "Dá para trocar de perfil depois na Central de controle (relógio no canto da tela).",
+            Modifier.align(Alignment.BottomCenter).padding(bottom = 30.dp),
             style = LabelStyle.copy(fontSize = 13.sp, fontWeight = FontWeight.Normal, color = Color.White.copy(alpha = 0.6f)),
         )
     }
 }
 
 @Composable
-private fun ProfileTile(letter: String, brush: Brush, name: String, requester: FocusRequester, plus: Boolean = false, onClick: () -> Unit) {
+private fun ProfileTile(p: Profile, requester: FocusRequester, manage: Boolean, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.16f else 1f, spring(0.6f, 380f), label = "profileTile")
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(130.dp)) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(128.dp)) {
         Box(
             Modifier
-                .size(112.dp)
+                .size(108.dp)
                 .graphicsLayer { scaleX = scale; scaleY = scale }
-                // Sem sombra no "+": com fundo translúcido a sombra aparece por dentro, em forma de polígono.
-                .then(if (plus) Modifier else Modifier.shadow(if (focused) 30.dp else 8.dp, CircleShape))
-                .background(brush, CircleShape)
-                .border(if (focused) 4.dp else if (plus) 1.5.dp else 0.dp, if (focused) Color.White else Color.White.copy(alpha = 0.4f), CircleShape)
+                .shadow(if (focused) 30.dp else 8.dp, CircleShape)
+                .border(if (focused) 4.dp else 0.dp, Color.White, CircleShape)
                 .focusRequester(requester)
                 .onFocusChanged { focused = it.isFocused }
                 .onSelect(onClick)
                 .focusable(),
-            contentAlignment = Alignment.Center,
         ) {
-            BasicText(letter, style = TitleStyle.copy(fontSize = if (plus) 44.sp else 46.sp, fontWeight = if (plus) FontWeight.Light else FontWeight.Bold, shadow = null))
+            ProfileAvatar(p.name, p.icon, p.color, 108.dp)
+            if (manage) {
+                Box(Modifier.size(108.dp).background(Color.Black.copy(alpha = 0.35f), CircleShape), contentAlignment = Alignment.Center) {
+                    GlyphIcon("M4 20h4L19 9l-4-4L4 16zM14 6l4 4", Color.White, 34.dp)
+                }
+            } else if (p.pin.isNotEmpty() || p.kids) {
+                Box(
+                    Modifier.align(Alignment.BottomEnd).offset(x = 2.dp, y = 2.dp).size(30.dp).background(Color(0xFF1C1C1E), CircleShape).border(2.dp, Color.White, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (p.pin.isNotEmpty()) GlyphIcon("M7 11h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2zM8 11V8a4 4 0 0 1 8 0v3", Color.White, 15.dp)
+                    else BasicText("K", style = LabelStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold, shadow = null))
+                }
+            }
         }
         Spacer(Modifier.height(18.dp))
         BasicText(
-            name,
+            p.name.ifEmpty { "Sem nome" },
             style = LabelStyle.copy(fontSize = 16.sp, color = Color.White.copy(alpha = if (focused) 1f else 0.7f), textAlign = TextAlign.Center),
             maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
+        if (p.kids) BasicText("Infantil", style = LabelStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Normal, color = Color.White.copy(alpha = 0.55f)))
     }
 }
 
-/** Página "Novo perfil": nome (OK abre o teclado), cor e criar. */
 @Composable
-fun NewProfileScreen(state: GlassState, wallpaper: Backdrop?, onDone: () -> Unit, onCancel: () -> Unit) {
-    val settings = state.settings
-    val n = remember { settings.profiles().size + 1 }
-    var name by remember { mutableStateOf("") }
-    var color by remember { mutableIntStateOf(n % ProfileColorCount) }
-    val nameFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { withFrameNanos { }; runCatching { nameFocus.requestFocus() } }
-    BackHandler { onCancel() }
-
-    fun create() {
-        val installed = state.byPkg.keys
-        settings.addProfile(GlassSettings.DEFAULT_FAVORITES.filter { it in installed })
-        settings.profileName = name.trim().ifEmpty { "Perfil $n" }
-        settings.profileColor = color
-        onDone()
-    }
-
-    Box(Modifier.fillMaxSize()) {
-        ProfileBackdrop(wallpaper)
-        Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(
-                Modifier.size(104.dp).shadow(20.dp, CircleShape).background(Brush.linearGradient(ProfileColors[color]), CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                BasicText(name.trim().take(1).uppercase().ifEmpty { "+" }, style = TitleStyle.copy(fontSize = 44.sp, fontWeight = FontWeight.Bold, shadow = null))
-            }
-            Spacer(Modifier.height(18.dp))
-            BasicText("Novo perfil", style = TitleStyle.copy(fontSize = 30.sp, fontWeight = FontWeight.Bold))
-            Spacer(Modifier.height(6.dp))
-            BasicText(
-                "Cada perfil tem seus favoritos, apps ocultos e papel de parede.",
-                style = LabelStyle.copy(fontSize = 15.sp, fontWeight = FontWeight.Normal, color = Color.White.copy(alpha = 0.7f)),
-            )
-            Spacer(Modifier.height(24.dp))
-            NameField(name, { name = it.take(20) }, Modifier.focusRequester(nameFocus))
-            Spacer(Modifier.height(18.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                ProfileColors.indices.forEach { i -> ColorDot(i, color == i, name.ifEmpty { "+" }) { color = i } }
-            }
-            Spacer(Modifier.height(30.dp))
-            PrimaryButton("Criar perfil", { create() }, Modifier)
-            Spacer(Modifier.height(4.dp))
-            TextLink("Cancelar", onCancel)
-        }
+private fun AddTile(onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.16f else 1f, spring(0.6f, 380f), label = "addTile")
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(128.dp)) {
+        Box(
+            Modifier
+                .size(108.dp)
+                .graphicsLayer { scaleX = scale; scaleY = scale }
+                .background(Color.White.copy(alpha = if (focused) 0.95f else 0.14f), CircleShape)
+                .border(1.5.dp, Color.White.copy(alpha = 0.4f), CircleShape)
+                .onFocusChanged { focused = it.isFocused }
+                .onSelect(onClick)
+                .focusable(),
+            contentAlignment = Alignment.Center,
+        ) { GlyphIcon("M12 5v14M5 12h14", if (focused) Color(0xFF111114) else Color.White, 40.dp) }
+        Spacer(Modifier.height(18.dp))
+        BasicText("Adicionar perfil", style = LabelStyle.copy(fontSize = 16.sp, color = Color.White.copy(alpha = if (focused) 1f else 0.7f)))
     }
 }
 
 /** Contador de inicializações do Android: muda a cada vez que a TV liga. */
 fun bootCount(ctx: android.content.Context): Int =
     runCatching { android.provider.Settings.Global.getInt(ctx.contentResolver, android.provider.Settings.Global.BOOT_COUNT) }.getOrDefault(-1)
-
-@Suppress("unused")
-private fun Profile.initial() = name.take(1).uppercase()

@@ -79,6 +79,7 @@ fun ControlCenter(
     onSettings: () -> Unit,
     onRecents: () -> Unit,
     onNewProfile: () -> Unit,
+    onSwitchProfile: (String) -> Unit,
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -115,15 +116,10 @@ fun ControlCenter(
                     Box(Modifier.size(34.dp, 24.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
                         ToggleGlyph(Dark)
                     }
-                    Box(
-                        Modifier.size(34.dp).background(androidx.compose.ui.graphics.Brush.linearGradient(ProfileColors[settings.profileColor.coerceIn(0, ProfileColors.lastIndex)]), CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        BasicText(settings.profileName.take(1).uppercase().ifEmpty { "•" }, style = LabelStyle.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold, shadow = null))
-                    }
+                    ProfileAvatar(settings.profileName, settings.profileIcon, settings.profileColor, 34.dp)
                 }
                 Spacer(Modifier.height(12.dp))
-                ProfilesRow(state) { onClose(); onNewProfile() }
+                ProfilesRow(state, onSwitch = onSwitchProfile) { onClose(); onNewProfile() }
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     CcTile(Icons.STANDBY, "StandBy", null, Modifier.width(126.dp).height(150.dp).focusRequester(first), big = true) {
@@ -264,41 +260,43 @@ private fun CcRound(icon: String, size: Dp = 52.dp, filled: Boolean = false, act
 
 private const val RECENTS_ICON = "M4 8h11v11H4zM8 4h12v11"
 
-/** Perfis no topo da Central de controle (como no tvOS): troca com um OK. */
+/** Perfis no topo da Central de controle (como no tvOS): troca com um OK (com PIN quando preciso). */
 @Composable
-private fun ProfilesRow(state: GlassState, onAdd: () -> Unit) {
+private fun ProfilesRow(state: GlassState, onSwitch: (String) -> Unit, onAdd: () -> Unit) {
     val settings = state.settings
     val theme = LocalGlassTheme.current
     val profiles = settings.profiles()
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+    // Com muitos perfis, os círculos encolhem para o "+" continuar cabendo no painel.
+    val small = profiles.size + 1 >= 5
+    val dot = if (small) 34.dp else 42.dp
+    Row(horizontalArrangement = Arrangement.spacedBy(if (small) 6.dp else 12.dp), verticalAlignment = Alignment.Top) {
         profiles.forEach { p ->
-            ProfileDot(p.name.take(1).uppercase().ifEmpty { "•" }, ProfileColors[p.color.coerceIn(0, ProfileColors.lastIndex)].let { androidx.compose.ui.graphics.Brush.linearGradient(it) }, p.name, p.id == settings.currentProfile, theme.content) {
-                settings.switchProfile(p.id)
+            ProfileDot(p.name, p.id == settings.currentProfile, theme.content, small, { ProfileAvatar(p.name, p.icon, p.color, dot) }) { onSwitch(p.id) }
+        }
+        ProfileDot("Adicionar", false, theme.content, small, {
+            Box(Modifier.size(dot).background(Color.White.copy(alpha = 0.18f), CircleShape), contentAlignment = Alignment.Center) {
+                GlyphIcon("M12 5v14M5 12h14", Color.White, 20.dp)
             }
-        }
-        ProfileDot("+", androidx.compose.ui.graphics.SolidColor(Color.White.copy(alpha = 0.18f)), "Adicionar", false, theme.content) {
-            onAdd()
-        }
+        }, onClick = onAdd)
     }
 }
 
 @Composable
-private fun ProfileDot(letter: String, brush: androidx.compose.ui.graphics.Brush, name: String, selected: Boolean, labelColor: Color, onClick: () -> Unit) {
+private fun ProfileDot(name: String, selected: Boolean, labelColor: Color, small: Boolean, avatar: @Composable () -> Unit, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) 1.14f else 1f, spring(0.6f, 450f), label = "pdot")
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(52.dp)) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(if (small) 46.dp else 52.dp)) {
         Box(
             Modifier
-                .size(42.dp)
+                .size(if (small) 34.dp else 42.dp)
                 .graphicsLayer { scaleX = scale; scaleY = scale }
                 .shadow(if (focused) 14.dp else 0.dp, CircleShape)
-                .background(brush, CircleShape)
                 .then(if (selected || focused) Modifier.border(2.5.dp, Color.White, CircleShape) else Modifier)
                 .onFocusChanged { focused = it.isFocused }
                 .onSelect(onClick)
                 .focusable(),
             contentAlignment = Alignment.Center,
-        ) { BasicText(letter, style = LabelStyle.copy(fontSize = 17.sp, fontWeight = FontWeight.Bold, shadow = null)) }
+        ) { avatar() }
         BasicText(name, Modifier.padding(top = 4.dp), style = LabelStyle.copy(color = labelColor.copy(alpha = if (selected) 1f else 0.7f), fontSize = 10.sp, shadow = null), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

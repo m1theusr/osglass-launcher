@@ -169,7 +169,10 @@ fun SettingsScreen(
     onRedoOnboarding: () -> Unit,
     onNewProfile: () -> Unit,
     onPickProfile: () -> Unit,
+    onEditProfile: (String) -> Unit,
+    onSwitchProfile: (String) -> Unit,
 ) {
+    val pinGate = LocalPinGate.current
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -213,8 +216,9 @@ fun SettingsScreen(
             val profiles = settings.profiles()
             profiles.forEach { pr ->
                 val current = pr.id == settings.currentProfile
-                add(SLink(pr.name, if (current) "Em uso" else "Trocar", "${pr.favorites.size} favoritos", SIcons.LOOK, ProfileColors[pr.color.coerceIn(0, ProfileColors.lastIndex)][0]) {
-                    settings.switchProfile(pr.id); tick++
+                val tags = listOfNotNull("infantil".takeIf { pr.kids }, "com PIN".takeIf { pr.pin.isNotEmpty() }).joinToString(" · ")
+                add(SLink(pr.name, if (current) "Em uso" else "Trocar", "${pr.favorites.size} favoritos" + if (tags.isNotEmpty()) " · $tags" else "", SIcons.LOOK, ProfileColors[pr.color.coerceIn(0, ProfileColors.lastIndex)][0]) {
+                    onSwitchProfile(pr.id); tick++
                 })
             }
             add(SLink("Adicionar perfil") { onNewProfile() })
@@ -222,10 +226,26 @@ fun SettingsScreen(
             add(SLink("Mostrar “Quem está usando?” agora") { onPickProfile() })
             add(SCaption("Cada perfil tem seus favoritos, apps ocultos e papel de parede. Troque também pela Central de controle."))
             add(SHeader("Este perfil"))
+            add(SLink("Editar perfil", "nome, avatar, favoritos, visual, proteção") { onEditProfile(settings.currentProfile) })
             add(SEdit("Nome", settings.profileName, "Seu nome") { settings.profileName = it.trim().ifEmpty { settings.profileName } })
             add(SChoice("Cor do perfil", ColorNames[settings.profileColor.coerceIn(0, ColorNames.lastIndex)]) {
                 settings.profileColor = (settings.profileColor + 1) % ColorNames.size
             })
+            add(SHeader("PIN dos pais"))
+            if (settings.parentPin.isEmpty()) {
+                add(SLink("Criar PIN dos pais", "protege Ajustes e a saída do perfil infantil") {
+                    pinGate(PinRequest("Crie o PIN dos pais", "Protege os Ajustes e a saída do perfil infantil", create = true) { settings.parentPin = it; notice = "PIN dos pais criado" })
+                })
+            } else {
+                add(SLink("Trocar PIN dos pais") {
+                    pinGate(PinRequest("PIN dos pais atual", null, verifyHash = settings.parentPin) {
+                        pinGate(PinRequest("Novo PIN dos pais", null, create = true) { h -> settings.parentPin = h; notice = "PIN dos pais trocado" })
+                    })
+                })
+                add(SLink("Remover PIN dos pais") {
+                    pinGate(PinRequest("PIN dos pais", "Para remover a proteção", verifyHash = settings.parentPin) { settings.parentPin = ""; notice = "PIN dos pais removido" })
+                })
+            }
             if (profiles.size > 1) {
                 val confirming = pendingRestore?.name == "#delete"
                 add(SLink("Apagar este perfil", if (confirming) "OK de novo para apagar" else "") {
@@ -460,7 +480,7 @@ fun SettingsScreen(
                             )
                         }
                         item {
-                            ProfileCard(settings.profileName, settings.profileColor, cat == PROFILE, catReq(PROFILE), onFocus = { cat = PROFILE }) {
+                            ProfileCard(settings.profileName, settings.profileIcon, settings.profileColor, cat == PROFILE, catReq(PROFILE), onFocus = { cat = PROFILE }) {
                                 focusManager.moveFocus(FocusDirection.Right)
                             }
                         }
@@ -545,7 +565,7 @@ private fun SidebarItem(
 }
 
 @Composable
-private fun ProfileCard(name: String, colorIndex: Int, selected: Boolean, requester: FocusRequester, onFocus: () -> Unit, onClick: () -> Unit) {
+private fun ProfileCard(name: String, icon: String, colorIndex: Int, selected: Boolean, requester: FocusRequester, onFocus: () -> Unit, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
     val theme = LocalGlassTheme.current
     val scale by animateFloatAsState(if (focused) 1.03f else 1f, spring(0.6f, 500f), label = "prof")
@@ -566,10 +586,7 @@ private fun ProfileCard(name: String, colorIndex: Int, selected: Boolean, reques
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(
-            Modifier.size(44.dp).background(Brush.linearGradient(ProfileColors[colorIndex.coerceIn(0, ProfileColors.lastIndex)]), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) { BasicText(name.take(1).uppercase().ifEmpty { "•" }, style = TitleStyle.copy(fontSize = 19.sp, shadow = null)) }
+        ProfileAvatar(name, icon, colorIndex, 44.dp)
         Column {
             BasicText(name, style = LabelStyle.copy(color = fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, shadow = null))
             BasicText("Perfil e backup", style = LabelStyle.copy(color = fg.copy(alpha = 0.65f), fontSize = 12.sp, fontWeight = FontWeight.Normal, shadow = null))

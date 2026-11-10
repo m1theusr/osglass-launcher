@@ -42,6 +42,14 @@ class GlassSettings(ctx: Context) {
     var wallDim by int("wall_dim", 0)
     var profileName by string("profile_name", "")
     var profileColor by int("profile_color", 0)
+    /** Ícone do avatar ("" = inicial do nome). */
+    var profileIcon by string("profile_icon", "")
+    /** Perfil infantil: só apps visíveis, sem recomendações, sem Ajustes e sem desinstalar. */
+    var kidsProfile by bool("kids_profile", false)
+    /** PIN (hash) para entrar neste perfil; vazio = sem PIN. */
+    var profilePin by string("profile_pin", "")
+    /** PIN dos pais (hash), vale para a TV toda: protege Ajustes e a saída do perfil infantil. */
+    var parentPin by string("parent_pin", "")
 
     var recsEnabled by bool("recs_enabled", true)
     var topShelf by bool("top_shelf", true)
@@ -101,7 +109,35 @@ class GlassSettings(ctx: Context) {
     var askProfileOnBoot by bool("ask_profile_on_boot", true)
     var lastBootCount by int("last_boot_count", -1)
 
-    private fun snapshot() = Profile(currentProfile, profileName, profileColor, favorites, hidden, wallpaper)
+    private fun snapshot() = Profile(
+        currentProfile, profileName, profileColor, favorites, hidden, wallpaper,
+        icon = profileIcon, themeDark = themeDark, glassLevel = glassLevel, recsEnabled = recsEnabled,
+        recsDisabled = recsDisabledApps, folders = foldersJson, greeting = greeting, weatherCity = weatherCity,
+        kids = kidsProfile, pin = profilePin,
+    )
+
+    private fun apply(p: Profile) {
+        profileName = p.name; profileColor = p.color; profileIcon = p.icon
+        favorites = p.favorites; hidden = p.hidden; wallpaper = p.wallpaper
+        themeDark = p.themeDark; glassLevel = p.glassLevel
+        recsEnabled = p.recsEnabled; recsDisabledApps = p.recsDisabled
+        foldersJson = p.folders; greeting = p.greeting; weatherCity = p.weatherCity
+        kidsProfile = p.kids; profilePin = p.pin
+    }
+
+    fun profileById(id: String): Profile? = profiles().firstOrNull { it.id == id }
+
+    /** Cria o perfil (vindo do assistente) e já entra nele. */
+    fun createProfile(p: Profile) {
+        saveProfiles(profiles() + p)
+        switchProfile(p.id)
+    }
+
+    /** Salva alterações de um perfil (o atual vai direto para os ajustes em uso). */
+    fun updateProfile(p: Profile) {
+        if (p.id == currentProfile) apply(p)
+        else saveProfiles(profiles().map { if (it.id == p.id) p else it })
+    }
 
     fun profiles(): List<Profile> {
         val stored = runCatching {
@@ -123,11 +159,7 @@ class GlassSettings(ctx: Context) {
         val list = profiles()
         val target = list.firstOrNull { it.id == id } ?: return
         saveProfiles(list)
-        profileName = target.name
-        profileColor = target.color
-        favorites = target.favorites
-        hidden = target.hidden
-        wallpaper = target.wallpaper
+        apply(target)
         currentProfile = id
     }
 
@@ -218,11 +250,24 @@ data class Profile(
     val favorites: List<String>,
     val hidden: Set<String>,
     val wallpaper: String,
+    val icon: String = "",
+    val themeDark: Boolean = true,
+    val glassLevel: Int = 0,
+    val recsEnabled: Boolean = true,
+    val recsDisabled: Set<String> = emptySet(),
+    val folders: String = "[]",
+    val greeting: Boolean = true,
+    val weatherCity: String = "",
+    val kids: Boolean = false,
+    val pin: String = "",
 ) {
     fun toJson(): org.json.JSONObject = org.json.JSONObject()
         .put("id", id).put("name", name).put("color", color)
         .put("favorites", org.json.JSONArray(favorites)).put("hidden", org.json.JSONArray(hidden.toList()))
-        .put("wallpaper", wallpaper)
+        .put("wallpaper", wallpaper).put("icon", icon).put("themeDark", themeDark).put("glassLevel", glassLevel)
+        .put("recsEnabled", recsEnabled).put("recsDisabled", org.json.JSONArray(recsDisabled.toList()))
+        .put("folders", folders).put("greeting", greeting).put("weatherCity", weatherCity)
+        .put("kids", kids).put("pin", pin)
 
     companion object {
         fun fromJson(o: org.json.JSONObject): Profile {
@@ -230,7 +275,16 @@ data class Profile(
             return Profile(
                 o.getString("id"), o.optString("name", "Perfil"), o.optInt("color", 0),
                 list("favorites"), list("hidden").toSet(), o.optString("wallpaper", Wallpapers.DEFAULT),
+                icon = o.optString("icon", ""), themeDark = o.optBoolean("themeDark", true),
+                glassLevel = o.optInt("glassLevel", 0), recsEnabled = o.optBoolean("recsEnabled", true),
+                recsDisabled = list("recsDisabled").toSet(), folders = o.optString("folders", "[]"),
+                greeting = o.optBoolean("greeting", true), weatherCity = o.optString("weatherCity", ""),
+                kids = o.optBoolean("kids", false), pin = o.optString("pin", ""),
             )
         }
     }
 }
+
+/** Hash do PIN (o PIN em si nunca é salvo). */
+fun hashPin(pin: String): String =
+    java.security.MessageDigest.getInstance("SHA-256").digest("osglass-pin:$pin".toByteArray()).joinToString("") { "%02x".format(it) }

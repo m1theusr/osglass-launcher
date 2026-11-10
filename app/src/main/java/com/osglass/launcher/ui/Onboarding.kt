@@ -433,7 +433,7 @@ private fun WallpaperPicker(state: GlassState, modifier: Modifier) {
 }
 
 @Composable
-private fun AppPicker(
+internal fun AppPicker(
     apps: List<AppEntry>,
     firstModifier: Modifier,
     badge: (AppEntry) -> String?,

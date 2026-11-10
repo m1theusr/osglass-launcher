@@ -82,12 +82,12 @@ class GlassState(val ctx: Context, val settings: GlassSettings) {
     fun hiddenApps(): List<AppEntry> = apps.orEmpty().filter { it.pkg in settings.hidden }
 
     fun contentFor(pkg: String): List<ContentItem> {
-        if (!settings.recsEnabled || pkg in settings.recsDisabledApps) return emptyList()
+        if (!settings.recsEnabled || settings.kidsProfile || pkg in settings.recsDisabledApps) return emptyList()
         return channels[pkg].orEmpty().ifEmpty { watchNext.filter { it.pkg == pkg } }
     }
 
     fun continueWatching(): List<ContentItem> =
-        if (settings.recsEnabled && settings.continueWatching) watchNext.filter { it.pkg !in settings.recsDisabledApps }
+        if (settings.recsEnabled && settings.continueWatching && !settings.kidsProfile) watchNext.filter { it.pkg !in settings.recsDisabledApps }
         else emptyList()
 
     fun toggleFavorite(pkg: String) {
@@ -193,6 +193,29 @@ fun GlassApp(homeEvents: SharedFlow<Unit>, resumeEvents: SharedFlow<Unit>) {
         )
     }
     var newProfileReturn by remember { mutableStateOf(Screen.Home) }
+    var editProfileId by remember { mutableStateOf<String?>(null) }
+    var pinReq by remember { mutableStateOf<PinRequest?>(null) }
+    val pinGate: (PinRequest) -> Unit = { pinReq = it }
+
+    /** Troca de perfil com as proteções: sair do infantil pede o PIN dos pais; entrar num perfil com PIN pede o PIN dele. */
+    fun switchGuarded(id: String) {
+        if (id == settings.currentProfile) return
+        val target = settings.profileById(id) ?: return
+        fun enter() {
+            if (target.pin.isNotEmpty()) pinGate(PinRequest("PIN de ${target.name}", null, verifyHash = target.pin) { settings.switchProfile(id) })
+            else settings.switchProfile(id)
+        }
+        if (settings.kidsProfile && settings.parentPin.isNotEmpty()) {
+            pinGate(PinRequest("PIN dos pais", "Para sair do perfil infantil", verifyHash = settings.parentPin) { enter() })
+        } else enter()
+    }
+
+    /** No perfil infantil, ações de adulto (Ajustes, novo perfil) pedem o PIN dos pais. */
+    fun adultOnly(action: () -> Unit) {
+        if (settings.kidsProfile && settings.parentPin.isNotEmpty()) {
+            pinGate(PinRequest("PIN dos pais", "Esta opção é protegida no perfil infantil", verifyHash = settings.parentPin) { action() })
+        } else action()
+    }
     LaunchedEffect(Unit) { settings.lastBootCount = boot }
 
     DisposableEffect(Unit) {
@@ -270,6 +293,7 @@ fun GlassApp(homeEvents: SharedFlow<Unit>, resumeEvents: SharedFlow<Unit>) {
           com.osglass.launcher.glass.LocalGlassStyle provides com.osglass.launcher.glass.GlassStyle.forLevel(settings.glassLevel)
               .let { if (settings.liteMode || settings.appsOnly) it.copy(clarity = 0f) else it },
           com.osglass.launcher.glass.LocalGlassTheme provides com.osglass.launcher.glass.GlassTheme(settings.themeDark),
+          LocalPinGate provides pinGate,
       ) {
         AnimatedContent(
             screen,
@@ -280,18 +304,20 @@ fun GlassApp(homeEvents: SharedFlow<Unit>, resumeEvents: SharedFlow<Unit>) {
                 Screen.Home -> HomeScreen(
                     state, wallpaper, screenW, screenH, homeEvents,
                     onStandBy = { screen = Screen.StandBy },
-                    onOpenSettings = { screen = Screen.Settings },
-                    onNewProfile = { newProfileReturn = Screen.Home; screen = Screen.NewProfile },
+                    onOpenSettings = { adultOnly { screen = Screen.Settings } },
+                    onNewProfile = { adultOnly { newProfileReturn = Screen.Home; editProfileId = null; screen = Screen.NewProfile } },
+                    onSwitchProfile = { switchGuarded(it) },
                 )
                 Screen.Onboarding -> OnboardingScreen(state, wallpaper) { screen = Screen.Home }
                 Screen.Profiles -> ProfilePickerScreen(
                     state, wallpaper,
                     onPicked = { screen = Screen.Home },
-                    onAdd = { newProfileReturn = Screen.Home; screen = Screen.NewProfile },
+                    onAdd = { newProfileReturn = Screen.Profiles; editProfileId = null; screen = Screen.NewProfile },
+                    onEdit = { id -> newProfileReturn = Screen.Profiles; editProfileId = id; screen = Screen.NewProfile },
                 )
-                Screen.NewProfile -> NewProfileScreen(
-                    state, wallpaper,
-                    onDone = { screen = Screen.Home },
+                Screen.NewProfile -> ProfileWizard(
+                    state, screenW, screenH, editProfileId,
+                    onDone = { screen = if (editProfileId != null) newProfileReturn else Screen.Home },
                     onCancel = { screen = newProfileReturn },
                 )
                 Screen.Settings -> SettingsScreen(
@@ -299,12 +325,15 @@ fun GlassApp(homeEvents: SharedFlow<Unit>, resumeEvents: SharedFlow<Unit>) {
                     onExit = { screen = Screen.Home },
                     onStandBy = { screen = Screen.StandBy },
                     onRedoOnboarding = { settings.onboardingDone = false; screen = Screen.Onboarding },
-                    onNewProfile = { newProfileReturn = Screen.Settings; screen = Screen.NewProfile },
+                    onNewProfile = { newProfileReturn = Screen.Settings; editProfileId = null; screen = Screen.NewProfile },
                     onPickProfile = { screen = Screen.Profiles },
+                    onEditProfile = { id -> newProfileReturn = Screen.Settings; editProfileId = id; screen = Screen.NewProfile },
+                    onSwitchProfile = { switchGuarded(it) },
                 )
                 Screen.StandBy -> StandByScreen(state, wallpaper) { screen = Screen.Home }
             }
         }
+        PinOverlay(pinReq) { pinReq = null }
       }
     }
 }

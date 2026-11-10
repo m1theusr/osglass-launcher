@@ -97,6 +97,7 @@ fun HomeScreen(
     onStandBy: () -> Unit,
     onOpenSettings: () -> Unit,
     onNewProfile: () -> Unit,
+    onSwitchProfile: (String) -> Unit,
 ) {
     val ctx = LocalContext.current
     val view = LocalView.current
@@ -284,7 +285,7 @@ fun HomeScreen(
                                     focusRequester = req(app.pkg),
                                     moving = moving == app.pkg,
                                     onClick = { state.launchApp(app.pkg, view, it) },
-                                    onMenu = { menuFor = app },
+                                    onMenu = { if (!settings.kidsProfile) menuFor = app },
                                     onMove = { d -> state.moveFavorite(app.pkg, d) },
                                     onMoveDone = { moving = null },
                                     onFocus = { if (it) { focusedPkg = app.pkg; area = Area.Dock } },
@@ -316,7 +317,7 @@ fun HomeScreen(
                                             focusRequester = req(item.pkg),
                                             moving = false,
                                             onClick = { state.launchApp(item.pkg, view, it) },
-                                            onMenu = { menuFor = item },
+                                            onMenu = { if (!settings.kidsProfile) menuFor = item },
                                             onMove = {},
                                             onMoveDone = {},
                                             glassIcons = glassIcons,
@@ -376,8 +377,7 @@ fun HomeScreen(
                                 true
                             },
                         h24 = settings.clock24h,
-                        avatarLetter = settings.profileName.take(1).uppercase().ifEmpty { "•" },
-                        avatarColor = settings.profileColor,
+                        avatar = { ProfileAvatar(settings.profileName, settings.profileIcon, settings.profileColor, 28.dp) },
                     )
                 }
             }
@@ -401,6 +401,7 @@ fun HomeScreen(
                 onSettings = onOpenSettings,
                 onRecents = { recentsOpen = true },
                 onNewProfile = onNewProfile,
+                onSwitchProfile = onSwitchProfile,
             )
 
             // ---- Menu do app (segurar OK / botão Menu)
@@ -430,7 +431,7 @@ fun HomeScreen(
                 apps = shownFolder?.apps.orEmpty(),
                 glassIcons = glassIcons,
                 onLaunch = { app, b -> state.launchApp(app.pkg, view, b) },
-                onMenu = { app -> menuFor = app },
+                onMenu = { app -> if (!settings.kidsProfile) menuFor = app },
             )
             GlassSheet(
                 visible = menuFor != null,
@@ -517,6 +518,7 @@ private fun HeroArea(
                     BasicText(app.label, style = TitleStyle.copy(fontSize = 36.sp, fontWeight = FontWeight.Bold))
                     BasicText(
                         when {
+                            settings.kidsProfile -> "Os destaques ficam desligados no perfil infantil."
                             needsPermission -> "Ative os destaques para ver aqui o que há de novo nos seus apps."
                             !settings.recsEnabled -> "Destaques desligados em Ajustes."
                             else -> "Este app não publica destaques."
@@ -525,7 +527,7 @@ private fun HeroArea(
                     )
                     Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         GlassPill("Abrir", onOpenApp, Modifier.focusRequester(primaryFocus), primary = true)
-                        if (needsPermission) GlassPill("Ativar destaques", onRequestPermission)
+                        if (needsPermission && !settings.kidsProfile) GlassPill("Ativar destaques", onRequestPermission)
                     }
                 }
             }
