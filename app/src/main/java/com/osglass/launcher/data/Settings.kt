@@ -32,6 +32,8 @@ class GlassSettings(ctx: Context) {
     var showDate by bool("show_date", true)
     var showInputs by bool("show_inputs", true)
     var liteMode by bool("lite_mode", false)
+    /** Só apps: sem destaques, recomendações, clima e música; papel de parede em meia resolução. */
+    var appsOnly by bool("apps_only", false)
 
     /** "Vidro" (padrão, estilo tvOS 27) ou "Original". */
     var iconPack by string("icon_pack", "Vidro")

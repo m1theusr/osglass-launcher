@@ -148,14 +148,23 @@ object Recents {
         return ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.packageName) == AppOpsManager.MODE_ALLOWED
     }
 
+    private fun closedPrefs(ctx: Context) = ctx.getSharedPreferences("recents_closed", Context.MODE_PRIVATE)
+
+    /** Tira o app da lista até ele ser usado de novo (o Android não deixa um app forçar o fechamento de outro). */
+    fun markClosed(ctx: Context, pkg: String) {
+        closedPrefs(ctx).edit().putLong(pkg, System.currentTimeMillis()).apply()
+    }
+
     /** Pacotes usados nos últimos 3 dias, do mais recente para o mais antigo (só os que abrem). */
     fun load(ctx: Context, launchable: Set<String>): List<String> = runCatching {
+        val closed = closedPrefs(ctx)
         val usm = ctx.getSystemService(UsageStatsManager::class.java)
         val now = System.currentTimeMillis()
         usm.queryUsageStats(UsageStatsManager.INTERVAL_BEST, now - 3 * 24 * 3600_000L, now)
             .filter { it.lastTimeUsed > 0 && it.packageName in launchable && it.packageName != ctx.packageName }
             .groupBy { it.packageName }
             .map { (pkg, list) -> pkg to list.maxOf { it.lastTimeUsed } }
+            .filter { (pkg, last) -> last > closed.getLong(pkg, 0L) }
             .sortedByDescending { it.second }
             .map { it.first }
             .take(10)

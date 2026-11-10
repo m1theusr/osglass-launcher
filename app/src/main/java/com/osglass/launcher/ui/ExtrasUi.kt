@@ -78,6 +78,7 @@ import com.osglass.launcher.data.TvSystem
 import com.osglass.launcher.data.Weather
 import com.osglass.launcher.data.WeatherRepo
 import com.osglass.launcher.glass.liquidGlass
+import kotlinx.coroutines.launch
 
 private val Dark = Color(0xFF111114)
 
@@ -200,7 +201,7 @@ fun FolderOverlay(
     AnimatedVisibility(visible, enter = fadeIn(tween(160)) + scaleIn(spring(0.75f, 500f), initialScale = 0.92f), exit = fadeOut(tween(130)) + scaleOut(tween(130), targetScale = 0.96f)) {
         val first = remember { FocusRequester() }
         LaunchedEffect(folder?.name) { withFrameNanos { }; runCatching { first.requestFocus() } }
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.3f)), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = com.osglass.launcher.glass.scrimAlpha(0.3f, com.osglass.launcher.glass.LocalLiteMode.current))), contentAlignment = Alignment.Center) {
             val shape = RoundedCornerShape(34.dp)
             Column(
                 Modifier
@@ -238,6 +239,7 @@ fun FolderOverlay(
 fun RecentsOverlay(visible: Boolean, state: GlassState, onClose: () -> Unit) {
     AnimatedVisibility(visible, enter = fadeIn(tween(180)), exit = fadeOut(tween(140))) {
         val ctx = LocalContext.current
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
         val hasAccess = remember { Recents.hasAccess(ctx) }
         val list = remember { mutableStateListOf<String>().apply { addAll(Recents.load(ctx, state.byPkg.keys)) } }
         var notice by remember { mutableStateOf<String?>(null) }
@@ -247,7 +249,16 @@ fun RecentsOverlay(visible: Boolean, state: GlassState, onClose: () -> Unit) {
         val first = remember { FocusRequester() }
         LaunchedEffect(Unit) { withFrameNanos { }; runCatching { first.requestFocus() } }
 
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f))) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = com.osglass.launcher.glass.scrimAlpha(0.35f, com.osglass.launcher.glass.LocalLiteMode.current)))
+                .onPreviewKeyEvent { e ->
+                    // ▲ é tratado no card (fecha o app); ▲/▼ nunca saem dos recentes.
+                    val code = e.nativeKeyEvent.keyCode
+                    code == android.view.KeyEvent.KEYCODE_DPAD_DOWN || (code == KEYCODE_DPAD_UP && list.isEmpty())
+                },
+        ) {
             Row(Modifier.fillMaxWidth().padding(start = SafeX, end = SafeX, top = 34.dp), verticalAlignment = Alignment.CenterVertically) {
                 BasicText("Apps recentes", Modifier.weight(1f), style = TitleStyle.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold))
                 val shape = RoundedCornerShape(50)
@@ -287,17 +298,24 @@ fun RecentsOverlay(visible: Boolean, state: GlassState, onClose: () -> Unit) {
                             if (pkg == list.first()) first else remember(pkg) { FocusRequester() },
                             onOpen = { onClose(); state.launchApp(pkg) },
                             onCloseApp = {
+                                val before = state.availableMemoryMb()
                                 runCatching { ctx.getSystemService(ActivityManager::class.java).killBackgroundProcesses(pkg) }
+                                Recents.markClosed(ctx, pkg)
                                 list.remove(pkg)
-                                memTick++
-                                notice = "${app.label} fechado"
+                                scope.launch {
+                                    kotlinx.coroutines.delay(700)
+                                    val freed = state.availableMemoryMb() - before
+                                    memTick++
+                                    notice = if (freed >= 5) "${app.label} fechado · liberou $freed MB"
+                                    else "${app.label} saiu da lista (não estava ocupando memória ou está em uso)"
+                                }
                             },
                         )
                     }
                 }
             }
             BasicText(
-                notice ?: "Aperte ▲ em um app para fechá-lo",
+                notice ?: "Aperte ▲ em um app para fechá-lo e liberar memória",
                 Modifier.align(Alignment.BottomCenter).padding(bottom = 40.dp),
                 style = LabelStyle.copy(fontSize = 13.sp, color = Color.White.copy(alpha = 0.75f)),
             )

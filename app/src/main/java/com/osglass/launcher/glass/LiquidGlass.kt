@@ -34,6 +34,11 @@ data class GlassTheme(val dark: Boolean) {
 
 val LocalGlassTheme = staticCompositionLocalOf { GlassTheme(true) }
 
+/** Modo leve/só apps: sem desfoque atrás dos painéis, então o fundo deles escurece mais. */
+val LocalLiteMode = staticCompositionLocalOf { false }
+
+fun scrimAlpha(normal: Float, lite: Boolean): Float = if (lite) maxOf(normal, 0.72f) else normal
+
 /**
  * Estilo do vidro (Ajustes › Aparência › Estilo do vidro), aplicado em todos os painéis:
  *  - [clarity] 1 = transparente (o fundo nítido aparece, como o Liquid Glass do tvOS 26/27);

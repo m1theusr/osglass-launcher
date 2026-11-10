@@ -55,6 +55,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -124,7 +126,7 @@ fun HomeScreen(
     var focusedPkg by remember { mutableStateOf<String?>(null) }
     val shelfPkg = focusedPkg ?: favs.firstOrNull()?.pkg
     val shelfApp = shelfPkg?.let { state.byPkg[it] }
-    val shelfItems = if (settings.topShelf && shelfPkg != null) state.contentFor(shelfPkg) else emptyList()
+    val shelfItems = if (settings.topShelf && !settings.appsOnly && shelfPkg != null) state.contentFor(shelfPkg) else emptyList()
     var heroIndex by remember(shelfPkg) { mutableIntStateOf(0) }
     LaunchedEffect(shelfPkg, shelfItems.size, settings.rotateShelf) {
         if (shelfItems.size > 1 && settings.rotateShelf && !settings.liteMode) {
@@ -150,7 +152,10 @@ fun HomeScreen(
     var restoreFocus by remember { mutableStateOf<String?>(null) }
     var ccOpen by remember { mutableStateOf(false) }
     val overlayOpen = ccOpen || menuFor != null || openFolder != null || folderPickFor != null || recentsOpen
+    // Algo abriu por cima da tela (Central, recentes, pasta, menu): desfoque ao vivo; no modo leve,
+    // um véu fosco estático (o fundo pré-desfocado) que parece igual e não custa nada à GPU.
     val blur by animateDpAsState(if (overlayOpen && !settings.liteMode) 14.dp else 0.dp, tween(250), label = "blur")
+    val liteVeil by animateFloatAsState(if (overlayOpen && settings.liteMode) 1f else 0f, tween(220), label = "liteVeil")
 
     val listState = rememberLazyListState()
     var area by remember { mutableStateOf(Area.Dock) }
@@ -198,7 +203,10 @@ fun HomeScreen(
     val edgeBottom = with(density) { 78.dp.toPx() }
     // tvOS 27: ao descer para os apps a página sobe, o dock vai para o alto e o fundo vira o destaque desfocado.
     val gridOffset = with(density) { (HeroHeight - 92.dp).toPx() }.toInt()
-    LaunchedEffect(area) {
+    // Modo só apps: sem destaque; dock no alto e grade sempre visível.
+    val compact = settings.appsOnly
+    LaunchedEffect(area, compact) {
+        if (compact) return@LaunchedEffect
         when (area) {
             Area.Grid -> if (listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < gridOffset - 4) {
                 listState.animateScrollToItem(0, gridOffset)
@@ -209,11 +217,19 @@ fun HomeScreen(
         }
     }
     val inGrid = area == Area.Grid
-    val frostAlpha by animateFloatAsState(if (inGrid) 1f else 0f, tween(500), label = "frost")
+    val frostAlpha by animateFloatAsState(if (inGrid && !compact) 1f else 0f, tween(500), label = "frost")
+    val gridAlpha = if (compact) 1f else frostAlpha
     val baseGlass = com.osglass.launcher.glass.LocalGlassStyle.current
     val contentGlass = if (inGrid) baseGlass.copy(clarity = 0f) else baseGlass
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().blur(blur)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .blur(blur)
+                // Com um painel aberto por cima (Central, recentes, pasta, menu), o foco não entra na tela inicial.
+                .focusProperties { onEnter = { if (overlayOpen) cancelFocusChange() } }
+                .focusGroup(),
+        ) {
             Crossfade(backdrop, animationSpec = tween(700), label = "backdrop") { b ->
                 if (b != null) Box(Modifier.fillMaxSize()) {
                     Image(b.sharp, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
@@ -232,7 +248,8 @@ fun HomeScreen(
                 com.osglass.launcher.glass.LocalGlassStyle provides contentGlass,
             ) {
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 110.dp)) {
-                    item(key = "hero") {
+                    if (compact) item(key = "top-space") { Spacer(Modifier.height(84.dp)) }
+                    else item(key = "hero") {
                         HeroArea(
                             state = state,
                             app = shelfApp,
@@ -250,7 +267,7 @@ fun HomeScreen(
                         )
                     }
                     item(key = "dock") {
-                        Dock(showChevron = area == Area.Dock) {
+                        Dock(showChevron = area == Area.Dock && !compact) {
                             if (favs.isEmpty() && state.apps != null) {
                                 item {
                                     BasicText(
@@ -286,7 +303,7 @@ fun HomeScreen(
                                 Modifier
                                     .padding(start = SafeX, end = SafeX, bottom = 22.dp)
                                     // No topo só o dock aparece; a grade surge ao descer (sem cantinhos na borda).
-                                    .graphicsLayer { alpha = frostAlpha }
+                                    .graphicsLayer { alpha = gridAlpha }
                                     .onFocusChanged { if (it.hasFocus) area = Area.Grid },
                                 horizontalArrangement = Arrangement.spacedBy(Gap),
                             ) {
@@ -312,10 +329,10 @@ fun HomeScreen(
                     }
                     val cw = state.continueWatching()
                     if (cw.isNotEmpty()) {
-                        item(key = "cw-title") { Box(Modifier.graphicsLayer { alpha = frostAlpha }) { SectionTitle("Continuar assistindo") } }
+                        item(key = "cw-title") { Box(Modifier.graphicsLayer { alpha = gridAlpha }) { SectionTitle("Continuar assistindo") } }
                         item(key = "cw") {
                             LazyRow(
-                                Modifier.graphicsLayer { alpha = frostAlpha }.onFocusChanged { if (it.hasFocus) area = Area.Grid },
+                                Modifier.graphicsLayer { alpha = gridAlpha }.onFocusChanged { if (it.hasFocus) area = Area.Grid },
                                 contentPadding = PaddingValues(horizontal = SafeX, vertical = 6.dp),
                                 horizontalArrangement = Arrangement.spacedBy(Gap),
                             ) {
@@ -362,6 +379,13 @@ fun HomeScreen(
                         avatarColor = settings.profileColor,
                     )
                 }
+            }
+        }
+
+        if (liteVeil > 0.01f) backdrop?.let { b ->
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = liteVeil }) {
+                Image(b.frosted, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.18f)))
             }
         }
 

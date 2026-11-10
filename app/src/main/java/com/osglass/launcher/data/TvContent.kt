@@ -181,6 +181,8 @@ object Images {
     private val memory = LruCache<String, ImageBitmap>(48)
     private val large = LruCache<String, ImageBitmap>(3)
 
+    fun clear() { memory.evictAll(); large.evictAll() }
+
     /** Imagens de tela cheia (destaque): cache separado e pequeno pra não estourar a RAM. */
     suspend fun loadLarge(ctx: Context, uri: String, maxWidthPx: Int): ImageBitmap? {
         large.get(uri)?.let { return it }

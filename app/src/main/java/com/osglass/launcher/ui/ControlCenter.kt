@@ -99,7 +99,7 @@ fun ControlCenter(
         val time by clockText(if (settings.clock24h) "HH:mm" else "h:mm a")
         val theme = LocalGlassTheme.current
 
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.22f))) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = com.osglass.launcher.glass.scrimAlpha(0.22f, com.osglass.launcher.glass.LocalLiteMode.current)))) {
             Column(
                 Modifier
                     .align(Alignment.TopEnd)

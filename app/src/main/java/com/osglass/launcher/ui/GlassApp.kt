@@ -206,8 +206,8 @@ fun GlassApp(homeEvents: SharedFlow<Unit>, resumeEvents: SharedFlow<Unit>) {
         }
         state.apps = loaded
     }
-    LaunchedEffect(state.contentKey, settings.recsEnabled, state.hasContentPermission) {
-        if (settings.recsEnabled && state.hasContentPermission) {
+    LaunchedEffect(state.contentKey, settings.recsEnabled, state.hasContentPermission, settings.appsOnly) {
+        if (settings.recsEnabled && state.hasContentPermission && !settings.appsOnly) {
             state.channels = TvContent.loadChannels(ctx)
             state.watchNext = TvContent.loadWatchNext(ctx)
         } else {
@@ -223,15 +223,15 @@ fun GlassApp(homeEvents: SharedFlow<Unit>, resumeEvents: SharedFlow<Unit>) {
         }
     }
     LaunchedEffect(Unit) { homeEvents.collect { if (screen != Screen.Onboarding) screen = Screen.Home } }
-    LaunchedEffect(settings.weatherOn, settings.weatherCity, settings.weatherUnit) {
-        if (!settings.weatherOn) { state.weather = null; return@LaunchedEffect }
+    LaunchedEffect(settings.weatherOn, settings.weatherCity, settings.weatherUnit, settings.appsOnly) {
+        if (!settings.weatherOn || settings.appsOnly) { state.weather = null; return@LaunchedEffect }
         while (true) {
             com.osglass.launcher.data.WeatherRepo.load(settings.weatherCity, settings.weatherUnit == "F")?.let { state.weather = it }
             delay(30 * 60_000L)
         }
     }
-    LaunchedEffect(settings.islandOn) {
-        while (settings.islandOn) {
+    LaunchedEffect(settings.islandOn, settings.appsOnly) {
+        while (settings.islandOn && !settings.appsOnly) {
             state.nowPlaying = if (com.osglass.launcher.data.Media.hasAccess(ctx)) withContext(Dispatchers.IO) { com.osglass.launcher.data.Media.current(ctx) } else null
             delay(3_000)
         }
@@ -246,13 +246,17 @@ fun GlassApp(homeEvents: SharedFlow<Unit>, resumeEvents: SharedFlow<Unit>) {
         }
     }
 
-    val wallpaper by produceState<Backdrop?>(null, settings.wallpaper) {
-        value = Wallpapers.load(ctx, settings.wallpaper, screenW, screenH)
+    // Só apps: papel de parede em meia resolução (~2 MB em vez de ~8 MB) e cache de imagens limpo.
+    val wallpaper by produceState<Backdrop?>(null, settings.wallpaper, settings.appsOnly) {
+        value = Wallpapers.load(ctx, settings.wallpaper, screenW, screenH, div = if (settings.appsOnly) 2 else 1)
     }
+    LaunchedEffect(settings.appsOnly) { if (settings.appsOnly) com.osglass.launcher.data.Images.clear() }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
       androidx.compose.runtime.CompositionLocalProvider(
-          com.osglass.launcher.glass.LocalGlassStyle provides com.osglass.launcher.glass.GlassStyle.forLevel(settings.glassLevel),
+          // Modo leve / só apps: vidro só fosco (sem a imagem nítida nem a refração, que pesam na GPU).
+          com.osglass.launcher.glass.LocalGlassStyle provides com.osglass.launcher.glass.GlassStyle.forLevel(settings.glassLevel)
+              .let { if (settings.liteMode || settings.appsOnly) it.copy(clarity = 0f) else it },
           com.osglass.launcher.glass.LocalGlassTheme provides com.osglass.launcher.glass.GlassTheme(settings.themeDark),
       ) {
         AnimatedContent(

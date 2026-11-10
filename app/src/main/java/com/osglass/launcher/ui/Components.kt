@@ -365,7 +365,7 @@ fun GlassSheet(
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.38f)),
+                .background(Color.Black.copy(alpha = com.osglass.launcher.glass.scrimAlpha(0.38f, com.osglass.launcher.glass.LocalLiteMode.current))),
             contentAlignment = Alignment.Center,
         ) {
             val requesters = remember(items.size) { List(items.size) { FocusRequester() } }

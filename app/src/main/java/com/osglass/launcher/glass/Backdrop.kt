@@ -54,10 +54,16 @@ object Wallpapers {
         id.substringAfterLast('/').substringBeforeLast('.').removePrefix("glass-")
             .replace('-', ' ').replaceFirstChar { it.uppercase() }
 
-    suspend fun load(ctx: Context, id: String, width: Int, height: Int): Backdrop =
+    /**
+     * [width]×[height] é o tamanho real da tela (usado pelo vidro para alinhar o fundo);
+     * [div] reduz só a resolução da imagem guardada (modo só apps: 2 → ~¼ da memória).
+     */
+    suspend fun load(ctx: Context, id: String, width: Int, height: Int, div: Int = 1): Backdrop =
         withContext(Dispatchers.Default) {
-            val src = decode(ctx, id, width, height) ?: decode(ctx, DEFAULT, width, height)!!
-            val sharp = centerCrop(src, width, height)
+            val w = width / div
+            val h = height / div
+            val src = decode(ctx, id, w, h) ?: decode(ctx, DEFAULT, w, h)!!
+            val sharp = centerCrop(src, w, h)
             if (sharp !== src) src.recycle()
             val frosted = frost(sharp)
             Backdrop(id, sharp.asImageBitmap(), frosted.asImageBitmap(), width, height)

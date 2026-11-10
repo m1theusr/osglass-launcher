@@ -376,7 +376,10 @@ fun SettingsScreen(state: GlassState, wallpaper: Backdrop?, onExit: () -> Unit, 
             add(SCaption("As sugestões “Para você” do Google TV vêm do servidor do Google e não ficam disponíveis para outros launchers."))
         }
         "Desempenho" -> buildList {
-            add(SToggle("Modo leve", settings.liteMode, "desliga desfoque, brilho e sombras", SIcons.BOLT, Color(0xFF30D158)) { settings.liteMode = it })
+            add(SToggle("Modo leve", settings.liteMode, "vidro só fosco, menus sobre um fundo fosco estático (sem desfoque ao vivo), sem brilho/sombra no foco e sem girar destaques", SIcons.BOLT, Color(0xFF30D158)) { settings.liteMode = it })
+            add(SToggle("Modo só apps", settings.appsOnly, "sem destaques, recomendações, clima e música; papel de parede em meia resolução. Usa o mínimo de memória.", SIcons.APPS, Color(0xFFBF5AF2)) {
+                settings.appsOnly = it; notice = if (it) "Modo só apps ligado" else "Destaques de volta"
+            })
             val total = TvSystem.totalMemoryMb(ctx)
             val free = state.availableMemoryMb()
             add(SMeter("Memória", 1f - free.toFloat() / total, "$free MB livres de ${"%.1f".format(total / 1024f)} GB", "Liberar") {
